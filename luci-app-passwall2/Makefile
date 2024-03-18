@@ -88,7 +88,7 @@ config PACKAGE_$(PKG_NAME)_INCLUDE_Shadowsocks_Libev_Client
 	bool "Include Shadowsocks Libev Client"
 	select PACKAGE_shadowsocks-libev-ss-local
 	select PACKAGE_shadowsocks-libev-ss-redir
-	default y
+	default n
 
 config PACKAGE_$(PKG_NAME)_INCLUDE_Shadowsocks_Libev_Server
 	bool "Include Shadowsocks Libev Server"
@@ -99,7 +99,7 @@ config PACKAGE_$(PKG_NAME)_INCLUDE_Shadowsocks_Rust_Client
 	bool "Include Shadowsocks Rust Client"
 	depends on aarch64||arm||i386||mips||mipsel||x86_64
 	select PACKAGE_shadowsocks-rust-sslocal
-	default y if aarch64
+	default n
 
 config PACKAGE_$(PKG_NAME)_INCLUDE_Shadowsocks_Rust_Server
 	bool "Include Shadowsocks Rust Server"
@@ -111,7 +111,7 @@ config PACKAGE_$(PKG_NAME)_INCLUDE_ShadowsocksR_Libev_Client
 	bool "Include ShadowsocksR Libev Client"
 	select PACKAGE_shadowsocksr-libev-ssr-local
 	select PACKAGE_shadowsocksr-libev-ssr-redir
-	default y
+	default n
 
 config PACKAGE_$(PKG_NAME)_INCLUDE_ShadowsocksR_Libev_Server
 	bool "Include ShadowsocksR Libev Server"
@@ -121,7 +121,7 @@ config PACKAGE_$(PKG_NAME)_INCLUDE_ShadowsocksR_Libev_Server
 config PACKAGE_$(PKG_NAME)_INCLUDE_Simple_Obfs
 	bool "Include Simple-Obfs (Shadowsocks Plugin)"
 	select PACKAGE_simple-obfs
-	default y
+	default n
 
 config PACKAGE_$(PKG_NAME)_INCLUDE_SingBox
 	bool "Include Sing-Box"
@@ -137,7 +137,7 @@ config PACKAGE_$(PKG_NAME)_INCLUDE_tuic_client
 config PACKAGE_$(PKG_NAME)_INCLUDE_V2ray_Plugin
 	bool "Include V2ray-Plugin (Shadowsocks Plugin)"
 	select PACKAGE_v2ray-plugin
-	default y if aarch64||arm||i386||x86_64
+	default n
 
 endmenu
 endef
