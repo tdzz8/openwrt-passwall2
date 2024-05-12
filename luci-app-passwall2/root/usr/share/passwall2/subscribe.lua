@@ -220,9 +220,8 @@ do
 	end)
 
 	uci:foreach(appname, "nodes", function(node)
+		local node_id = node[".name"]
 		if node.protocol and node.protocol == '_shunt' then
-			local node_id = node[".name"]
-
 			local rules = {}
 			uci:foreach(appname, "shunt_rules", function(e)
 				if e[".name"] and e.remarks then
@@ -256,7 +255,6 @@ do
 				
 			end
 		elseif node.protocol and node.protocol == '_balancing' then
-			local node_id = node[".name"]
 			local nodes = {}
 			local new_nodes = {}
 			if node.balancing_node then
@@ -268,7 +266,7 @@ do
 						remarks = node,
 						set = function(o, server)
 							for kk, vv in pairs(CONFIG) do
-								if (vv.remarks == "负载均衡节点列表" .. node_id) then
+								if (vv.remarks == "Xray负载均衡节点[" .. node_id .. "]列表") then
 									table.insert(vv.new_nodes, server)
 								end
 							end
@@ -277,13 +275,12 @@ do
 				end
 			end
 			CONFIG[#CONFIG + 1] = {
-				remarks = "负载均衡节点列表" .. node_id,
+				remarks = "Xray负载均衡节点[" .. node_id .. "]列表",
 				nodes = nodes,
 				new_nodes = new_nodes,
 				set = function(o)
 					for kk, vv in pairs(CONFIG) do
-						if (vv.remarks == "负载均衡节点列表" .. node_id) then
-							--log("刷新负载均衡节点列表")
+						if (vv.remarks == "Xray负载均衡节点[" .. node_id .. "]列表") then
 							uci:foreach(appname, "nodes", function(node2)
 								if node2[".name"] == node[".name"] then
 									local section = uci:section(appname, "nodes", node_id)
@@ -294,6 +291,42 @@ do
 					end
 				end
 			}
+
+			--后备节点
+			local currentNode = uci:get_all(appname, node_id) or nil
+			if currentNode and currentNode.fallback_node then
+				CONFIG[#CONFIG + 1] = {
+					log = true,
+					id = node_id,
+					remarks = "Xray负载均衡节点[" .. node_id .. "]后备节点",
+					currentNode = uci:get_all(appname, currentNode.fallback_node) or nil,
+					set = function(o, server)
+						uci:set(appname, node_id, "fallback_node", server)
+						o.newNodeId = server
+					end,
+					delete = function(o)
+						uci:delete(appname, node_id, "fallback_node")
+					end
+				}
+			end
+		else
+			--落地节点
+			local currentNode = uci:get_all(appname, node_id) or nil
+			if currentNode and currentNode.to_node then
+				CONFIG[#CONFIG + 1] = {
+					log = true,
+					id = node_id,
+					remarks = "节点[" .. node_id .. "]落地节点",
+					currentNode = uci:get_all(appname, currentNode.to_node) or nil,
+					set = function(o, server)
+						uci:set(appname, node_id, "to_node", server)
+						o.newNodeId = server
+					end,
+					delete = function(o)
+						uci:delete(appname, node_id, "to_node")
+					end
+				}
+			end
 		end
 	end)
 
@@ -594,7 +627,9 @@ local function processData(szType, content, add_mode, add_from)
 			local params = {}
 			for _, v in pairs(split(query[2], '&')) do
 				local t = split(v, '=')
-				params[string.lower(t[1])] = UrlDecode(t[2])
+				if #t > 1 then
+					params[string.lower(t[1])] = UrlDecode(t[2])
+				end
 			end
 			-- [2001:4860:4860::8888]:443
 			-- 8.8.8.8:443
@@ -838,7 +873,9 @@ local function processData(szType, content, add_mode, add_from)
 		local params = {}
 		for _, v in pairs(split(query[2], '&')) do
 			local t = split(v, '=')
-			params[string.lower(t[1])] = UrlDecode(t[2])
+			if #t > 1 then
+				params[string.lower(t[1])] = UrlDecode(t[2])
+			end
 		end
 		-- [2001:4860:4860::8888]:443
 		-- 8.8.8.8:443
@@ -891,13 +928,11 @@ local function processData(szType, content, add_mode, add_from)
 end
 
 local function curl(url, file, ua)
-	if not ua or ua == "" then
-		ua = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.122 Safari/537.36"
+	local curl_args = api.clone(api.curl_args)
+	if ua and ua ~= "" and ua ~= "curl" then
+		table.insert(curl_args, '--user-agent "' .. ua .. '"')
 	end
-	local args = {
-		"-skL", "--retry 3", "--connect-timeout 3", '--user-agent "' .. ua .. '"'
-	}
-	local return_code, result = api.curl_logic(url, file, args)
+	local return_code, result = api.curl_logic(url, file, curl_args)
 	return return_code
 end
 
@@ -1188,7 +1223,8 @@ local function parse_link(raw, add_mode, add_from)
 							tinsert(node_list, result)
 						end
 					end
-				end, function ()
+				end, function (err)
+					--log(err)
 					log(v, "解析错误，跳过此节点。")
 				end
 			)

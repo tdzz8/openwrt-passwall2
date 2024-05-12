@@ -5,7 +5,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-passwall2
-PKG_VERSION:=1.28-2
+PKG_VERSION:=1.29-1
 PKG_RELEASE:=
 
 PKG_CONFIG_DEPENDS:= \
@@ -35,7 +35,13 @@ LUCI_DEPENDS:=+coreutils +coreutils-base64 +coreutils-nohup +curl \
 
 define Package/$(PKG_NAME)/config
 menu "Configuration"
-	depends on PACKAGE_$(PKG_NAME)
+
+config PACKAGE_$(PKG_NAME)_INCLUDE_IPv6_Nat
+	depends on PACKAGE_ip6tables
+	bool "Include IPv6 Nat"
+	default n
+
+if PACKAGE_$(PKG_NAME)
 
 config PACKAGE_$(PKG_NAME)_Iptables_Transparent_Proxy
 	bool "Iptables Transparent Proxy"
@@ -70,11 +76,6 @@ config PACKAGE_$(PKG_NAME)_INCLUDE_Haproxy
 config PACKAGE_$(PKG_NAME)_INCLUDE_Hysteria
 	bool "Include Hysteria"
 	select PACKAGE_hysteria
-	default n
-
-config PACKAGE_$(PKG_NAME)_INCLUDE_IPv6_Nat
-	depends on PACKAGE_ip6tables
-	bool "Include IPv6 Nat"
 	default n
 
 config PACKAGE_$(PKG_NAME)_INCLUDE_NaiveProxy
@@ -138,6 +139,7 @@ config PACKAGE_$(PKG_NAME)_INCLUDE_V2ray_Plugin
 	select PACKAGE_v2ray-plugin
 	default n
 
+endif
 endmenu
 endef
 
@@ -145,6 +147,7 @@ define Package/$(PKG_NAME)/conffiles
 /etc/config/passwall2
 /etc/config/passwall2_server
 /usr/share/passwall2/domains_excluded
+/www/luci-static/resources/qrcode.min.js
 endef
 
 include $(TOPDIR)/feeds/luci/luci.mk
