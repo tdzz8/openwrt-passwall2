@@ -298,7 +298,9 @@ function get_valid_nodes()
 		e.id = e[".name"]
 		if e.type and e.remarks then
 			if e.protocol and (e.protocol == "_balancing" or e.protocol == "_shunt" or e.protocol == "_iface") then
-				e["remark"] = "%s：[%s] " % {e.type .. " " .. i18n.translatef(e.protocol), e.remarks}
+				local type = e.type
+				if type == "sing-box" then type = "Sing-Box" end
+				e["remark"] = "%s：[%s] " % {type .. " " .. i18n.translatef(e.protocol), e.remarks}
 				e["node_type"] = "special"
 				nodes[#nodes + 1] = e
 			end
@@ -312,9 +314,20 @@ function get_valid_nodes()
 							protocol = "VMess"
 						elseif protocol == "vless" then
 							protocol = "VLESS"
+						elseif protocol == "shadowsocks" then
+							protocol = "SS"
+						elseif protocol == "shadowsocksr" then
+							protocol = "SSR"
+						elseif protocol == "wireguard" then
+							protocol = "WG"
+						elseif protocol == "hysteria" then
+							protocol = "HY"
+						elseif protocol == "hysteria2" then
+							protocol = "HY2"
 						else
 							protocol = protocol:gsub("^%l",string.upper)
 						end
+						if type == "sing-box" then type = "Sing-Box" end
 						type = type .. " " .. protocol
 					end
 					if is_ipv6(address) then address = get_ipv6_full(address) end
@@ -681,8 +694,11 @@ local default_file_tree = {
 	x86_64  = "amd64",
 	x86     = "386",
 	aarch64 = "arm64",
+	rockchip = "arm64",
 	mips    = "mips",
-	mipsel  = "mipsle",
+	mips64  = "mips64",
+	mipsel  = "mipsel",
+	mips64el = "mips64el",
 	armv5   = "arm.*5",
 	armv6   = "arm.*6[^4]*",
 	armv7   = "arm.*7",
@@ -747,7 +763,7 @@ function to_check(arch, app_name)
 		remote_version = remote_version:gsub(com[app_name].remote_version_str_replace, "")
 	end
 	local has_update = compare_versions(local_version:match("[^v]+"), "<", remote_version:match("[^v]+"))
-
+--[[
 	if not has_update then
 		return {
 			code = 0,
@@ -755,7 +771,7 @@ function to_check(arch, app_name)
 			remote_version = remote_version
 		}
 	end
-
+]]
 	local asset = {}
 	for _, v in ipairs(json.assets) do
 		if v.name and v.name:match(match_file_name) then
@@ -776,7 +792,7 @@ function to_check(arch, app_name)
 
 	return {
 		code = 0,
-		has_update = true,
+		has_update = has_update,
 		local_version = local_version,
 		remote_version = remote_version,
 		html_url = json.html_url,
@@ -946,6 +962,47 @@ function to_move(app_name,file)
 	end
 
 	return {code = 0}
+end
+
+function get_version()
+	local version = sys.exec("opkg list-installed luci-app-passwall2 2>/dev/null | awk '{print $3}'")
+	if not version or #version == 0 then
+		version = sys.exec("apk info luci-app-passwall2 2>/dev/null | awk 'NR == 1 {print $1}' | cut -d'-' -f4-")
+	end
+	return version or ""
+end
+
+function to_check_self()
+	local url = "https://raw.githubusercontent.com/xiaorouji/openwrt-passwall2/main/luci-app-passwall2/Makefile"
+	local tmp_file = "/tmp/passwall2_makefile"
+	local return_code, result = curl_logic(url, tmp_file, curl_args)
+	result = return_code == 0
+	if not result then
+		exec("/bin/rm", {"-f", tmp_file})
+		return {
+			code = 1,
+			error = i18n.translatef("Failed")
+		}
+	end
+	local local_version  = get_version()
+	local remote_version = sys.exec("echo -n $(grep 'PKG_VERSION' /tmp/passwall2_makefile|awk -F '=' '{print $2}')")
+				.. "-" ..  sys.exec("echo -n $(grep 'PKG_RELEASE' /tmp/passwall2_makefile|awk -F '=' '{print $2}')")
+
+	local has_update = compare_versions(local_version, "<", remote_version)
+	if not has_update then
+		return {
+			code = 0,
+			local_version = local_version,
+			remote_version = remote_version
+		}
+	end
+	return {
+		code = 1,
+		has_update = true,
+		local_version = local_version,
+		remote_version = remote_version,
+		error = i18n.translatef("The latest version: %s, currently does not support automatic update, if you need to update, please compile or download the ipk and then manually install.", remote_version)
+	}
 end
 
 function cacheFileCompareToLogic(file, str)

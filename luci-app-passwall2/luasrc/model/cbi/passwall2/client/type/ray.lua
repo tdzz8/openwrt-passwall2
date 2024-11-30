@@ -17,7 +17,7 @@ local function option_name(name)
 	return option_prefix .. name
 end
 
-local x_ss_encrypt_method_list = {
+local ss_method_list = {
 	"aes-128-gcm", "aes-256-gcm", "chacha20-poly1305", "xchacha20-poly1305", "2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm", "2022-blake3-chacha20-poly1305"
 }
 
@@ -27,6 +27,7 @@ local header_type_list = {
 	"none", "srtp", "utp", "wechat-video", "dtls", "wireguard"
 }
 
+local xray_version = api.get_app_version("xray")
 -- [[ Xray ]]
 
 s.fields["type"]:value(type_name, "Xray")
@@ -106,11 +107,13 @@ o:value("leastPing")
 o.default = "leastPing"
 
 -- Fallback Node
-if api.compare_versions(api.get_app_version("xray"), ">=", "1.8.10") then
+if api.compare_versions(xray_version, ">=", "1.8.10") then
 	local o = s:option(ListValue, option_name("fallback_node"), translate("Fallback Node"))
-	o:depends({ [option_name("balancingStrategy")] = "leastPing" })
-	o:value("",translate("Null"))
-	o.default = ""
+	if api.compare_versions(xray_version, ">=", "1.8.12") then
+		o:depends({ [option_name("protocol")] = "_balancing" })
+	else
+		o:depends({ [option_name("balancingStrategy")] = "leastPing" })
+	end
 	local function check_fallback_chain(fb)
 		for k, v in pairs(fallback_table) do
 			if v.fallback == fb then
@@ -128,19 +131,34 @@ if api.compare_versions(api.get_app_version("xray"), ">=", "1.8.10") then
 end
 
 -- 探测地址
-local o = s:option(Flag, option_name("useCustomProbeUrl"), translate("Use Custome Probe URL"), translate("By default the built-in probe URL will be used, enable this option to use a custom probe URL."))
-o:depends({ [option_name("balancingStrategy")] = "leastPing" })
+local ucpu = s:option(Flag, option_name("useCustomProbeUrl"), translate("Use Custome Probe URL"), translate("By default the built-in probe URL will be used, enable this option to use a custom probe URL."))
+ucpu:depends({ [option_name("balancingStrategy")] = "leastPing" })
 
-local o = s:option(Value, option_name("probeUrl"), translate("Probe URL"))
-o:depends({ [option_name("useCustomProbeUrl")] = true })
-o.default = "https://www.google.com/generate_204"
-o.description = translate("The URL used to detect the connection status.")
+local pu = s:option(Value, option_name("probeUrl"), translate("Probe URL"))
+pu:depends({ [option_name("useCustomProbeUrl")] = true })
+pu:value("https://cp.cloudflare.com/", "Cloudflare")
+pu:value("https://www.gstatic.com/generate_204", "Gstatic")
+pu:value("https://www.google.com/generate_204", "Google")
+pu:value("https://www.youtube.com/generate_204", "YouTube")
+pu:value("https://connect.rom.miui.com/generate_204", "MIUI (CN)")
+pu:value("https://connectivitycheck.platform.hicloud.com/generate_204", "HiCloud (CN)")
+pu.default = "https://www.google.com/generate_204"
+pu.description = translate("The URL used to detect the connection status.")
 
 -- 探测间隔
-local o = s:option(Value, option_name("probeInterval"), translate("Probe Interval"))
-o:depends({ [option_name("balancingStrategy")] = "leastPing" })
-o.default = "1m"
-o.description = translate("The interval between initiating probes. Every time this time elapses, a server status check is performed on a server. The time format is numbers + units, such as '10s', '2h45m', and the supported time units are <code>ns</code>, <code>us</code>, <code>ms</code>, <code>s</code>, <code>m</code>, <code>h</code>, which correspond to nanoseconds, microseconds, milliseconds, seconds, minutes, and hours, respectively.")
+local pi = s:option(Value, option_name("probeInterval"), translate("Probe Interval"))
+pi:depends({ [option_name("balancingStrategy")] = "leastPing" })
+pi.default = "1m"
+pi.description = translate("The interval between initiating probes. Every time this time elapses, a server status check is performed on a server. The time format is numbers + units, such as '10s', '2h45m', and the supported time units are <code>ns</code>, <code>us</code>, <code>ms</code>, <code>s</code>, <code>m</code>, <code>h</code>, which correspond to nanoseconds, microseconds, milliseconds, seconds, minutes, and hours, respectively.")
+
+if api.compare_versions(xray_version, ">=", "1.8.12") then
+	ucpu:depends({ [option_name("protocol")] = "_balancing" })
+	pi:depends({ [option_name("protocol")] = "_balancing" })
+else
+	ucpu:depends({ [option_name("balancingStrategy")] = "leastPing" })
+	pi:depends({ [option_name("balancingStrategy")] = "leastPing" })
+end
+
 
 -- [[ 分流模块 ]]
 if #nodes_table > 0 then
@@ -280,16 +298,16 @@ o.default = "none"
 o:value("none")
 o:depends({ [option_name("protocol")] = "vless" })
 
-o = s:option(ListValue, option_name("x_ss_encrypt_method"), translate("Encrypt Method"))
+o = s:option(ListValue, option_name("ss_method"), translate("Encrypt Method"))
 o.rewrite_option = "method"
-for a, t in ipairs(x_ss_encrypt_method_list) do o:value(t) end
+for a, t in ipairs(ss_method_list) do o:value(t) end
 o:depends({ [option_name("protocol")] = "shadowsocks" })
 
 o = s:option(Flag, option_name("iv_check"), translate("IV Check"))
-o:depends({ [option_name("protocol")] = "shadowsocks", [option_name("x_ss_encrypt_method")] = "aes-128-gcm" })
-o:depends({ [option_name("protocol")] = "shadowsocks", [option_name("x_ss_encrypt_method")] = "aes-256-gcm" })
-o:depends({ [option_name("protocol")] = "shadowsocks", [option_name("x_ss_encrypt_method")] = "chacha20-poly1305" })
-o:depends({ [option_name("protocol")] = "shadowsocks", [option_name("x_ss_encrypt_method")] = "xchacha20-poly1305" })
+o:depends({ [option_name("protocol")] = "shadowsocks", [option_name("ss_method")] = "aes-128-gcm" })
+o:depends({ [option_name("protocol")] = "shadowsocks", [option_name("ss_method")] = "aes-256-gcm" })
+o:depends({ [option_name("protocol")] = "shadowsocks", [option_name("ss_method")] = "chacha20-poly1305" })
+o:depends({ [option_name("protocol")] = "shadowsocks", [option_name("ss_method")] = "xchacha20-poly1305" })
 
 o = s:option(Flag, option_name("uot"), translate("UDP over TCP"))
 o:depends({ [option_name("protocol")] = "shadowsocks" })
@@ -303,7 +321,7 @@ o = s:option(ListValue, option_name("flow"), translate("flow"))
 o.default = ""
 o:value("", translate("Disable"))
 o:value("xtls-rprx-vision")
-o:depends({ [option_name("protocol")] = "vless" })
+o:depends({ [option_name("protocol")] = "vless", [option_name("tls")] = true, [option_name("transport")] = "raw" })
 
 o = s:option(Flag, option_name("tls"), translate("TLS"))
 o.default = 0
@@ -316,16 +334,20 @@ o:depends({ [option_name("protocol")] = "shadowsocks" })
 
 o = s:option(Flag, option_name("reality"), translate("REALITY"))
 o.default = 0
-o:depends({ [option_name("tls")] = true, [option_name("transport")] = "tcp" })
+o:depends({ [option_name("tls")] = true, [option_name("transport")] = "raw" })
 o:depends({ [option_name("tls")] = true, [option_name("transport")] = "h2" })
 o:depends({ [option_name("tls")] = true, [option_name("transport")] = "grpc" })
+o:depends({ [option_name("tls")] = true, [option_name("transport")] = "xhttp" })
 
 o = s:option(ListValue, option_name("alpn"), translate("alpn"))
 o.default = "default"
 o:value("default", translate("Default"))
-o:value("h2,http/1.1")
+o:value("h3")
 o:value("h2")
+o:value("h3,h2")
 o:value("http/1.1")
+o:value("h2,http/1.1")
+o:value("h3,h2,http/1.1")
 o:depends({ [option_name("tls")] = true, [option_name("reality")] = false })
 
 -- o = s:option(Value, option_name("minversion"), translate("minversion"))
@@ -371,7 +393,7 @@ o:depends({ [option_name("tls")] = true, [option_name("utls")] = true })
 o:depends({ [option_name("tls")] = true, [option_name("reality")] = true })
 
 o = s:option(ListValue, option_name("transport"), translate("Transport"))
-o:value("tcp", "TCP")
+o:value("raw", "RAW")
 o:value("mkcp", "mKCP")
 o:value("ws", "WebSocket")
 o:value("h2", "HTTP/2")
@@ -379,6 +401,7 @@ o:value("ds", "DomainSocket")
 o:value("quic", "QUIC")
 o:value("grpc", "gRPC")
 o:value("httpupgrade", "HttpUpgrade")
+o:value("xhttp", "XHTTP")
 o:depends({ [option_name("protocol")] = "vmess" })
 o:depends({ [option_name("protocol")] = "vless" })
 o:depends({ [option_name("protocol")] = "socks" })
@@ -401,7 +424,7 @@ o = s:option(Value, option_name("wireguard_mtu"), translate("MTU"))
 o.default = "1420"
 o:depends({ [option_name("protocol")] = "wireguard" })
 
-if api.compare_versions(api.get_app_version("xray"), ">=", "1.8.0") then
+if api.compare_versions(xray_version, ">=", "1.8.0") then
 	o = s:option(Value, option_name("wireguard_reserved"), translate("Reserved"), translate("Decimal numbers separated by \",\" or Base64-encoded strings."))
 	o:depends({ [option_name("protocol")] = "wireguard" })
 end
@@ -410,13 +433,13 @@ o = s:option(Value, option_name("wireguard_keepAlive"), translate("Keep Alive"))
 o.default = "0"
 o:depends({ [option_name("protocol")] = "wireguard" })
 
--- [[ TCP部分 ]]--
+-- [[ RAW部分 ]]--
 
 -- TCP伪装
 o = s:option(ListValue, option_name("tcp_guise"), translate("Camouflage Type"))
 o:value("none", "none")
 o:value("http", "http")
-o:depends({ [option_name("transport")] = "tcp" })
+o:depends({ [option_name("transport")] = "raw" })
 
 -- HTTP域名
 o = s:option(DynamicList, option_name("tcp_guise_http_host"), translate("HTTP Host"))
@@ -544,8 +567,115 @@ o = s:option(Value, option_name("httpupgrade_path"), translate("HttpUpgrade Path
 o.placeholder = "/"
 o:depends({ [option_name("transport")] = "httpupgrade" })
 
--- [[ Mux ]]--
-o = s:option(Flag, option_name("mux"), translate("Mux"))
+-- [[ XHTTP部分 ]]--
+o = s:option(Value, option_name("xhttp_host"), translate("XHTTP Host"))
+o:depends({ [option_name("transport")] = "xhttp" })
+
+o = s:option(Value, option_name("xhttp_path"), translate("XHTTP Path"))
+o.placeholder = "/"
+o:depends({ [option_name("transport")] = "xhttp" })
+
+-- XHTTP XMUX
+o = s:option(Flag, option_name("xhttp_xmux"), "XMUX", translate("Enable XHTTP XMUX. It's not recommended to enable Mux.Cool at the same time."))
+o:depends({ [option_name("transport")] = "xhttp" })
+
+o = s:option(Value, option_name("maxConcurrency"), translate("XMUX Max Concurrency"))
+o:depends({ [option_name("xhttp_xmux")] = true })
+
+o = s:option(Value, option_name("maxConnections"), translate("XMUX Max Connections"))
+o:depends({ [option_name("xhttp_xmux")] = true })
+
+o = s:option(Value, option_name("cMaxReuseTimes"), translate("XMUX Connection Max Reuse Times"))
+o:depends({ [option_name("xhttp_xmux")] = true })
+
+o = s:option(Value, option_name("cMaxLifetimeMs"), translate("XMUX Connection Max Lifetime (ms)"))
+o:depends({ [option_name("xhttp_xmux")] = true })
+
+-- XHTTP 下行
+o = s:option(Flag, option_name("xhttp_download"), string.format('<a style="color:red">%s</a>', translate("XHTTP download splitting")))
+o:depends({ [option_name("transport")] = "xhttp" })
+
+o = s:option(Value, option_name("xhttp_download_address"), string.format('<a style="color:red">%s</a>', translate("Address")))
+o:depends({ [option_name("xhttp_download")] = true })
+
+o = s:option(Value, option_name("xhttp_download_port"), string.format('<a style="color:red">%s</a>', translate("Port")))
+o:depends({ [option_name("xhttp_download")] = true })
+
+o = s:option(Value, option_name("xhttp_download_host"), string.format('<a style="color:red">%s</a>', "XHTTP Host"))
+o:depends({ [option_name("xhttp_download")] = true })
+
+o = s:option(Value, option_name("xhttp_download_path"), string.format('<a style="color:red">%s</a>', "XHTTP Path"), translate("Must be the same as upload path."))
+o.placeholder = "/"
+o:depends({ [option_name("xhttp_download")] = true })
+
+o = s:option(Flag, option_name("xhttp_download_tls"), string.format('<a style="color:red">%s</a>', "TLS"))
+o:depends({ [option_name("xhttp_download")] = true })
+o.default = 0
+
+o = s:option(Flag, option_name("xhttp_download_reality"), string.format('<a style="color:red">%s</a>', "REALITY"))
+o.default = 0
+o:depends({ [option_name("xhttp_download_tls")] = true })
+
+o = s:option(ListValue, option_name("xhttp_download_alpn"), string.format('<a style="color:red">%s</a>', "alpn"))
+o.default = "default"
+o:value("default", translate("Default"))
+o:value("h3")
+o:value("h2")
+o:value("h3,h2")
+o:value("http/1.1")
+o:value("h2,http/1.1")
+o:value("h3,h2,http/1.1")
+o:depends({ [option_name("xhttp_download_tls")] = true, [option_name("xhttp_download_reality")] = false })
+
+o = s:option(Value, option_name("xhttp_download_tls_serverName"), string.format('<a style="color:red">%s</a>', translate("Domain")))
+o:depends({ [option_name("xhttp_download_tls")] = true })
+
+o = s:option(Value, option_name("xhttp_download_reality_publicKey"), string.format('<a style="color:red">%s</a>', translate("Public Key")))
+o:depends({ [option_name("xhttp_download_tls")] = true, [option_name("xhttp_download_reality")] = true })
+
+o = s:option(Value, option_name("xhttp_download_reality_shortId"), string.format('<a style="color:red">%s</a>', translate("Short Id")))
+o:depends({ [option_name("xhttp_download_tls")] = true, [option_name("xhttp_download_reality")] = true })
+
+o = s:option(Value, option_name("xhttp_download_reality_spiderX"), string.format('<a style="color:red">%s</a>', "Spider X"))
+o.placeholder = "/"
+o:depends({ [option_name("xhttp_download_tls")] = true, [option_name("xhttp_download_reality")] = true })
+
+o = s:option(Flag, option_name("xhttp_download_utls"), string.format('<a style="color:red">%s</a>', "uTLS"))
+o.default = "0"
+o:depends({ [option_name("xhttp_download_tls")] = true, [option_name("xhttp_download_reality")] = false })
+
+o = s:option(ListValue, option_name("xhttp_download_fingerprint"), string.format('<a style="color:red">%s</a>', translate("Finger Print")))
+o:value("chrome")
+o:value("firefox")
+o:value("edge")
+o:value("safari")
+o:value("360")
+o:value("qq")
+o:value("ios")
+o:value("android")
+o:value("random")
+o:value("randomized")
+o.default = "chrome"
+o:depends({ [option_name("xhttp_download_tls")] = true, [option_name("xhttp_download_utls")] = true })
+o:depends({ [option_name("xhttp_download_tls")] = true, [option_name("xhttp_download_reality")] = true })
+
+o = s:option(Flag, option_name("xhttp_download_xmux"), string.format('<a style="color:red">%s</a>', "XMUX"), translate("Enable XHTTP XMUX. It's not recommended to enable Mux.Cool at the same time."))
+o:depends({ [option_name("xhttp_download")] = true })
+
+o = s:option(Value, option_name("download_maxConcurrency"), string.format('<a style="color:red">%s</a>', translate("XMUX Max Concurrency")))
+o:depends({ [option_name("xhttp_download_xmux")] = true })
+
+o = s:option(Value, option_name("download_maxConnections"), string.format('<a style="color:red">%s</a>', translate("XMUX Max Connections")))
+o:depends({ [option_name("xhttp_download_xmux")] = true })
+
+o = s:option(Value, option_name("download_cMaxReuseTimes"), string.format('<a style="color:red">%s</a>', translate("XMUX Connection Max Reuse Times")))
+o:depends({ [option_name("xhttp_download_xmux")] = true })
+
+o = s:option(Value, option_name("download_cMaxLifetimeMs"), string.format('<a style="color:red">%s</a>', translate("XMUX Connection Max Lifetime (ms)")))
+o:depends({ [option_name("xhttp_download_xmux")] = true })
+
+-- [[ Mux.Cool ]]--
+o = s:option(Flag, option_name("mux"), "Mux", translate("Enable Mux.Cool"))
 o:depends({ [option_name("protocol")] = "vmess" })
 o:depends({ [option_name("protocol")] = "vless", [option_name("flow")] = "" })
 o:depends({ [option_name("protocol")] = "http" })
@@ -558,7 +688,7 @@ o.default = 8
 o:depends({ [option_name("mux")] = true })
 
 -- [[ XUDP Mux ]]--
-o = s:option(Flag, option_name("xmux"), translate("xMux"))
+o = s:option(Flag, option_name("xmux"), "XUDP Mux")
 o.default = 1
 o:depends({ [option_name("protocol")] = "vless", [option_name("flow")] = "xtls-rprx-vision" })
 o:depends({ [option_name("protocol")] = "vless", [option_name("flow")] = "xtls-rprx-vision-udp443" })

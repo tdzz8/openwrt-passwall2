@@ -222,26 +222,51 @@ load_acl() {
 				fi
 			}
 			
-			for i in $(cat ${TMP_ACL_PATH}/${sid}/rule_list); do
+			_acl_list=${TMP_ACL_PATH}/${sid}/source_list
+
+			for i in $(cat $_acl_list); do
+				local _ipt_source
+				local msg
+				if [ -n "${interface}" ]; then
+					. /lib/functions/network.sh
+					local gateway device
+					network_get_gateway gateway "${interface}"
+					network_get_device device "${interface}"
+					[ -z "${device}" ] && device="${interface}"
+					_ipt_source="-i ${device} "
+					msg="源接口【${device}】，"
+				fi
 				if [ -n "$(echo ${i} | grep '^iprange:')" ]; then
 					_iprange=$(echo ${i} | sed 's#iprange:##g')
-					_ipt_source=$(factor ${_iprange} "-m iprange --src-range")
-					msg="【$remarks】，IP range【${_iprange}】，"
+					_ipt_source=$(factor ${_iprange} "${_ipt_source}-m iprange --src-range")
+					msg="${msg}IP range【${_iprange}】，"
+					unset _iprange
 				elif [ -n "$(echo ${i} | grep '^ipset:')" ]; then
 					_ipset=$(echo ${i} | sed 's#ipset:##g')
-					_ipt_source="-m set --match-set ${_ipset} src"
-					msg="【$remarks】，IPset【${_ipset}】，"
+					msg="${msg}IPset【${_ipset}】，"
+					ipset -q list ${_ipset} >/dev/null
+					if [ $? -eq 0 ]; then
+						_ipt_source="${_ipt_source}-m set --match-set ${_ipset} src"
+						unset _ipset
+					else
+						echolog "  - 【$remarks】，${msg}不存在，忽略。"
+						unset _ipset
+						continue
+					fi
 				elif [ -n "$(echo ${i} | grep '^ip:')" ]; then
 					_ip=$(echo ${i} | sed 's#ip:##g')
-					_ipt_source=$(factor ${_ip} "-s")
-					msg="【$remarks】，IP【${_ip}】，"
+					_ipt_source=$(factor ${_ip} "${_ipt_source}-s")
+					msg="${msg}IP【${_ip}】，"
+					unset _ip
 				elif [ -n "$(echo ${i} | grep '^mac:')" ]; then
 					_mac=$(echo ${i} | sed 's#mac:##g')
-					_ipt_source=$(factor ${_mac} "-m mac --mac-source")
-					msg="【$remarks】，MAC【${_mac}】，"
+					_ipt_source=$(factor ${_mac} "${_ipt_source}-m mac --mac-source")
+					msg="${msg}MAC【${_mac}】，"
+					unset _mac
 				else
 					continue
 				fi
+				msg="【$remarks】，${msg}"
 
 				ipt_tmp=$ipt_n
 				[ -n "${is_tproxy}" ] && ipt_tmp=$ipt_m
@@ -328,10 +353,10 @@ load_acl() {
 				}
 				$ipt_m -A PSW2 $(comment "$remarks") ${_ipt_source} -p udp -j RETURN
 				$ip6t_m -A PSW2 $(comment "$remarks") ${_ipt_source} -p udp -j RETURN 2>/dev/null
+				unset ipt_tmp _ipt_source msg msg2
 			done
-			unset enabled sid remarks sources tcp_no_redir_ports udp_no_redir_ports tcp_redir_ports udp_redir_ports node
-			unset _ip _mac _iprange _ipset _ip_or_mac rule_list node_remark
-			unset ipt_tmp msg msg2
+			unset enabled sid remarks sources tcp_no_redir_ports udp_no_redir_ports tcp_redir_ports udp_redir_ports node interface
+			unset node_remark _acl_list
 		done
 	}
 	
@@ -597,8 +622,8 @@ add_firewall_rule() {
 	
 	local ipset_global_whitelist="passwall2_global_whitelist"
 	local ipset_global_whitelist6="passwall2_global_whitelist6"
-	ipset -! create $ipset_global_whitelist nethash maxelem 1048576
-	ipset -! create $ipset_global_whitelist6 nethash family inet6 maxelem 1048576
+	ipset -! create $ipset_global_whitelist nethash maxelem 1048576 timeout 259200
+	ipset -! create $ipset_global_whitelist6 nethash family inet6 maxelem 1048576 timeout 259200
 
 	#  过滤所有节点IP
 	filter_vpsip > /dev/null 2>&1 &
